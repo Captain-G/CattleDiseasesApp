@@ -9,6 +9,8 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 import json
+import matplotlib.pyplot as plt
+from inference_sdk import InferenceHTTPClient
 
 
 def label_encode_column(data, column):
@@ -34,6 +36,8 @@ def upload_image():
 
         for path in image_paths:
             st.image(path, caption='Image', width=300)
+
+        return image_paths
 
     if st.button("Upload Image"):
         st.success("Image Uploaded Successfully")
@@ -100,6 +104,19 @@ def display_animation():
     st_lottie(lottie_anim, speed=1, reverse=False, loop=True, height=200, width=200, quality="high")
 
 
+def image_model(img):
+    CLIENT = InferenceHTTPClient(
+        api_url="https://classify.roboflow.com",
+        api_key="93J2JA4QhOvsFFy3ENF1"
+    )
+
+    result = CLIENT.infer(img, model_id="cow-diseae-identifier/1")
+
+    confidence = result.get("confidence")
+    top = result.get("top")
+    st.write(f"Prediction : {top} with a confidence of {confidence * 100}%")
+
+
 def main():
     st.set_page_config(
         page_title="Livestock Disease Predictor",
@@ -117,9 +134,9 @@ def main():
     with animation_col:
         display_animation()
 
-    with open('svm_model.pkl', 'rb') as model_file:
+    with open('cattle_diseases_svc.pkl', 'rb') as model_file:
         loaded_model = pickle.load(model_file)
-    with open('scaler.pkl', 'rb') as model_file:
+    with open('livestock_scaler.pkl', 'rb') as model_file:
         loaded_scaler = pickle.load(model_file)
 
     age = st.slider('What is the Age of the Animal in Years?', 0, 30)
@@ -131,7 +148,7 @@ def main():
         temp = (temp * 9 / 5) + 32
 
     weight = st.slider("What is the Weight of the Animal in KG?", 0, 500)
-    vaccination_history = st.selectbox("Does the Animal been previously Vaccinated?", ["Yes", "No"])
+    vaccination_history = st.selectbox("Has the Animal been previously Vaccinated?", ["Yes", "No"])
     st.write("Select ONE Symptom Per Row : ")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -140,24 +157,25 @@ def main():
                              "Chills",
                              "Crackling Sound", "Shortness of Breath", "Chest Discomfort", "Fatigue"])
         symptom1 = symptom1.lower()
-        # symptom1 = "Painless Lumps"
+
     with col2:
         symptom2 = st.radio("Select the Second Symptom : ",
                             ["Painless Lumps", "Swelling in Limbs", "Loss of Appetite", "Blisters on Gums",
                              "Depression", "Blisters on Tongue", "Blisters on Mouth", "Swellings in Extremities",
                              "Sores on Mouth", "Lameness"])
         symptom2 = symptom2.lower()
-        # symptom2 = "Blisters on Tongue"
+
     with col3:
         symptom3 = st.radio("Enter the Third Symptom :",
                             ["Loss of Appetite", "Crackling Sound", "Depression", "Difficulty Walking",
                              "Painless Lumps", "Shortness of Breath", "Lameness", "Chills", "Swellings in Extremities",
                              "Fatigue"])
         symptom3 = symptom3.lower()
-        # symptom3 = "Swellings in Extremities"
+
     if st.button("Show Prediction"):
         new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
                     'Symptom 2': f'{symptom2}', 'Symptom 3': f'{symptom3}'}
+        # st.dataframe(new_data)
 
         new_df = pd.DataFrame([new_data])
         new_features = ['blisters on gums', 'blisters on hooves', 'blisters on mouth',
@@ -178,23 +196,29 @@ def main():
                     new_df.loc[index, symptom] = 1
 
         new_df.drop(['Symptom 1', 'Symptom 2', 'Symptom 3'], axis=1, inplace=True)
-        # new_df = scaler.fit_transform(new_df)
-        new_df = loaded_scaler.fit_transform(new_df)
+
+        new_df = loaded_scaler.transform(new_df)
         svc_model = loaded_model
         prediction = svc_model.predict(new_df)
-        # st.write(f"Prediction : {prediction}")
-        if prediction == [0]:
-            st.write(f"Prediction : Anthrax")
-        elif prediction == [1]:
-            st.write(f"Prediction : Blackleg")
-        elif prediction == [2]:
-            st.write(f"Prediction : Foot and mouth")
-        elif prediction == [3]:
-            st.write(f"Prediction : Lumpy virus")
-        elif prediction == [4]:
-            st.write(f"Prediction : Pneumonia")
-    #
-    upload_image()
+        disease_names = {0: "Anthrax", 1: "Blackleg", 2: "Foot and Mouth", 3: "Lumpy Virus", 4: "Pneumonia"}
+        predicted_disease = disease_names[prediction[0]]
+
+        st.write(f"Prediction: {predicted_disease}")
+        probabilities = svc_model.predict_proba(new_df)[0] * 100
+        diseases = ["Anthrax", "Blackleg", "Foot and Mouth", "Lumpy Virus", "Pneumonia"]
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.bar(diseases, probabilities)
+        ax.set_xlabel('Disease')
+        ax.set_ylabel('Probability (%)')
+        ax.set_title('Probabilities of Different Diseases')
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+
+    img = upload_image()
+    if img:
+        with st.spinner("Processing Image..."):
+            image_model(img)
 
 
 if __name__ == "__main__":
