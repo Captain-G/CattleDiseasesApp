@@ -94,11 +94,13 @@ def model():
     st.success("Model and Scaler saved successfully")
 
 
+@st.cache_data()
 def load_lottie(filepath: str):
     with open(filepath, "r") as f:
         return json.load(f)
 
 
+@st.cache_data()
 def display_animation():
     lottie_anim = load_lottie("animations/cow_animation.json")
     st_lottie(lottie_anim, speed=1, reverse=False, loop=True, height=200, width=200, quality="high")
@@ -124,6 +126,19 @@ def main():
         layout="centered",
         initial_sidebar_state="expanded"
     )
+    # df = pd.read_csv("data/animal_disease_dataset.csv")
+    #
+    # min_value = df['Age'].min()
+    #
+    # # Get the maximum value in the column
+    # max_value = df['Age'].max()
+    #
+    # # Get the mean value of the column
+    # mean_value = df['Age'].mean()
+    #
+    # st.write(f"Min : {min_value}")
+    # st.write(f"Max : {max_value}")
+    # st.write(f"Mean : {mean_value}")
 
     animation_col, header_col = st.columns([1, 3])
 
@@ -139,81 +154,178 @@ def main():
     with open('livestock_scaler.pkl', 'rb') as model_file:
         loaded_scaler = pickle.load(model_file)
 
-    age = st.slider('What is the Age of the Animal in Years?', 0, 30)
+    age = st.slider('What is the Age of the Animal in Years?', 1, 15)
 
     gender = st.selectbox("What is the Gender of the Animal?", ["Male", "Female"])
     temp = st.text_input("What is the Temperature of the Animal in Degrees Celsius?")
+
     if temp:
         temp = float(temp)
         temp = (temp * 9 / 5) + 32
 
+        if temp < 95:
+            st.warning("The entered Temperature is too Low")
+        elif temp > 110:
+            st.warning("The entered Temperature is too High")
+
     weight = st.slider("What is the Weight of the Animal in KG?", 0, 500)
     vaccination_history = st.selectbox("Has the Animal been previously Vaccinated?", ["Yes", "No"])
-    st.write("Select ONE Symptom Per Row : ")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        symptom1 = st.radio("Select the First Symptom : ",
-                            ["Depression", "Loss of Appetite", "Painless Lumps", "Difficulty Walking", "Lameness",
-                             "Chills",
-                             "Crackling Sound", "Shortness of Breath", "Chest Discomfort", "Fatigue"])
-        symptom1 = symptom1.lower()
 
-    with col2:
-        symptom2 = st.radio("Select the Second Symptom : ",
-                            ["Painless Lumps", "Swelling in Limbs", "Loss of Appetite", "Blisters on Gums",
-                             "Depression", "Blisters on Tongue", "Blisters on Mouth", "Swellings in Extremities",
-                             "Sores on Mouth", "Lameness"])
-        symptom2 = symptom2.lower()
 
-    with col3:
-        symptom3 = st.radio("Enter the Third Symptom :",
-                            ["Loss of Appetite", "Crackling Sound", "Depression", "Difficulty Walking",
-                             "Painless Lumps", "Shortness of Breath", "Lameness", "Chills", "Swellings in Extremities",
-                             "Fatigue"])
-        symptom3 = symptom3.lower()
+    symptom_1 = [
+        "depression",
+        "painless lumps",
+        "loss of appetite",
+        "difficulty walking",
+        "lameness",
+        "chills",
+        "crackling sound",
+        "sores on gums",
+        "fatigue",
+        "shortness of breath",
+        "chest discomfort",
+        "swelling in limb",
+        "swelling in abdomen",
+        "blisters on gums",
+        "swelling in extremities",
+        "swelling in muscle",
+        "blisters on hooves",
+        "blisters on tongue",
+        "sores on tongue",
+        "sweats",
+        "sores on hooves",
+        "blisters on mouth",
+        "swelling in neck",
+        "sores on mouth"
+    ]
+
+    symptom_2 = [
+        "painless lumps",
+        "loss of appetite",
+        "swelling in limb",
+        "blisters on gums",
+        "depression",
+        "blisters on tongue",
+        "blisters on mouth",
+        "swelling in extremities",
+        "sores on mouth",
+        "lameness",
+        "sores on tongue",
+        "difficulty walking",
+        "sweats",
+        "sores on hooves",
+        "shortness of breath",
+        "crackling sound",
+        "chest discomfort",
+        "chills",
+        "swelling in abdomen",
+        "sores on gums",
+        "swelling in muscle",
+        "fatigue",
+        "swelling in neck",
+        "blisters on hooves"
+    ]
+
+    symptom_3 = [
+        "loss of appetite",
+        "depression",
+        "crackling sound",
+        "difficulty walking",
+        "painless lumps",
+        "shortness of breath",
+        "lameness",
+        "chills",
+        "swelling in extremities",
+        "fatigue",
+        "chest discomfort",
+        "swelling in limb",
+        "sweats",
+        "blisters on mouth",
+        "sores on mouth",
+        "swelling in abdomen",
+        "blisters on tongue",
+        "swelling in muscle",
+        "swelling in neck",
+        "sores on tongue",
+        "blisters on hooves",
+        "blisters on gums",
+        "sores on hooves",
+        "sores on gums"
+    ]
+
+    all_symptoms = list(set(symptom_1 + symptom_2 + symptom_3))
+    symptoms = st.multiselect("Select a Maximum of 3 Symptoms", all_symptoms)
+
+    symptom1_bool = False
+    symptom2_bool = False
+    symptom3_bool = False
 
     if st.button("Show Prediction"):
-        new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
-                    'Symptom 2': f'{symptom2}', 'Symptom 3': f'{symptom3}'}
-        # st.dataframe(new_data)
 
-        new_df = pd.DataFrame([new_data])
-        new_features = ['blisters on gums', 'blisters on hooves', 'blisters on mouth',
-                        'blisters on tongue', 'chest discomfort', 'chills', 'crackling sound',
-                        'depression', 'difficulty walking', 'fatigue', 'lameness', 'loss of appetite',
-                        'painless lumps', 'shortness of breath', 'sores on gums', 'sores on hooves',
-                        'sores on mouth', 'sores on tongue', 'sweats', 'swelling in abdomen',
-                        'swelling in extremities', 'swelling in limb', 'swelling in muscle',
-                        'swelling in neck']
-        # create columns
-        for feature in new_features:
-            new_df[feature] = 0
+        if len(symptoms) > 3:
+            st.warning("You have entered More than the 3 Required Symptoms")
+        elif len(symptoms) < 1:
+            st.warning("You have Not entered any Symptoms")
+        else:
+            if symptoms:
+                for i in range(len(symptoms)):
+                    if symptoms[i] in symptom_1 and symptom1_bool is False:
+                        symptom1 = symptoms[i]
+                        symptom1_bool = True
+                    elif symptoms[i] in symptom_2 and symptom2_bool is False:
+                        symptom2 = symptoms[i]
+                        symptom2_bool = True
+                    elif symptoms[i] in symptom_3 and symptom3_bool is False:
+                        symptom3 = symptoms[i]
+                        symptom3_bool = True
 
-        for index, row in new_df.iterrows():
-            for symptom_column in ['Symptom 1', 'Symptom 2', 'Symptom 3']:
-                symptom = row[symptom_column]
-                if symptom in new_features:
-                    new_df.loc[index, symptom] = 1
+            if symptom1_bool and symptom2_bool and symptom3_bool:
+                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
+                            'Symptom 2': f'{symptom2}', 'Symptom 3': f'{symptom3}'}
+            elif symptom1_bool and symptom2_bool:
+                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
+                            'Symptom 2': f'{symptom2}', 'Symptom 3': f''}
+            elif symptom1_bool:
+                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
+                            'Symptom 2': '', 'Symptom 3': ''}
 
-        new_df.drop(['Symptom 1', 'Symptom 2', 'Symptom 3'], axis=1, inplace=True)
+            new_df = pd.DataFrame([new_data])
+            new_features = ['blisters on gums', 'blisters on hooves', 'blisters on mouth',
+                            'blisters on tongue', 'chest discomfort', 'chills', 'crackling sound',
+                            'depression', 'difficulty walking', 'fatigue', 'lameness', 'loss of appetite',
+                            'painless lumps', 'shortness of breath', 'sores on gums', 'sores on hooves',
+                            'sores on mouth', 'sores on tongue', 'sweats', 'swelling in abdomen',
+                            'swelling in extremities', 'swelling in limb', 'swelling in muscle',
+                            'swelling in neck']
 
-        new_df = loaded_scaler.transform(new_df)
-        svc_model = loaded_model
-        prediction = svc_model.predict(new_df)
-        disease_names = {0: "Anthrax", 1: "Blackleg", 2: "Foot and Mouth", 3: "Lumpy Virus", 4: "Pneumonia"}
-        predicted_disease = disease_names[prediction[0]]
+            for feature in new_features:
+                new_df[feature] = 0
 
-        st.write(f"Prediction: {predicted_disease}")
-        probabilities = svc_model.predict_proba(new_df)[0] * 100
-        diseases = ["Anthrax", "Blackleg", "Foot and Mouth", "Lumpy Virus", "Pneumonia"]
+            for index, row in new_df.iterrows():
+                for symptom_column in ['Symptom 1', 'Symptom 2', 'Symptom 3']:
+                    symptom = row[symptom_column]
+                    if symptom in new_features:
+                        new_df.loc[index, symptom] = 1
 
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.bar(diseases, probabilities)
-        ax.set_xlabel('Disease')
-        ax.set_ylabel('Probability (%)')
-        ax.set_title('Probabilities of Different Diseases')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+            new_df.drop(['Symptom 1', 'Symptom 2', 'Symptom 3'], axis=1, inplace=True)
+
+            new_df = loaded_scaler.transform(new_df)
+            svc_model = loaded_model
+            prediction = svc_model.predict(new_df)
+            disease_names = {0: "Anthrax", 1: "Blackleg", 2: "Foot and Mouth", 3: "Lumpy Virus", 4: "Pneumonia"}
+            predicted_disease = disease_names[prediction[0]]
+
+            st.write(f"Prediction: {predicted_disease}")
+            probabilities = svc_model.predict_proba(new_df)[0] * 100
+            diseases = ["Anthrax", "Blackleg", "Foot and Mouth", "Lumpy Virus", "Pneumonia"]
+
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.bar(diseases, probabilities)
+            ax.set_xlabel('Disease')
+            ax.set_ylabel('Probability (%)')
+            ax.set_title('Probabilities of Different Diseases')
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
 
     img = upload_image()
     if img:
