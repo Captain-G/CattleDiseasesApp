@@ -126,19 +126,6 @@ def main():
         layout="centered",
         initial_sidebar_state="expanded"
     )
-    # df = pd.read_csv("data/animal_disease_dataset.csv")
-    #
-    # min_value = df['Age'].min()
-    #
-    # # Get the maximum value in the column
-    # max_value = df['Age'].max()
-    #
-    # # Get the mean value of the column
-    # mean_value = df['Age'].mean()
-    #
-    # st.write(f"Min : {min_value}")
-    # st.write(f"Max : {max_value}")
-    # st.write(f"Mean : {mean_value}")
 
     animation_col, header_col = st.columns([1, 3])
 
@@ -170,7 +157,6 @@ def main():
 
     weight = st.slider("What is the Weight of the Animal in KG?", 0, 500)
     vaccination_history = st.selectbox("Has the Animal been previously Vaccinated?", ["Yes", "No"])
-
 
     symptom_1 = [
         "depression",
@@ -254,7 +240,7 @@ def main():
     ]
 
     all_symptoms = list(set(symptom_1 + symptom_2 + symptom_3))
-    symptoms = st.multiselect("Select a Maximum of 3 Symptoms", all_symptoms)
+    symptoms = st.multiselect("Select 3 Symptoms", all_symptoms)
 
     symptom1_bool = False
     symptom2_bool = False
@@ -266,6 +252,8 @@ def main():
             st.warning("You have entered More than the 3 Required Symptoms")
         elif len(symptoms) < 1:
             st.warning("You have Not entered any Symptoms")
+        elif len(symptoms) < 3:
+            st.warning("You need to enter 3 Symptoms")
         else:
             if symptoms:
                 for i in range(len(symptoms)):
