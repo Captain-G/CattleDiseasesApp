@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import pandas as pd
 import pickle as pickle
@@ -11,6 +12,54 @@ from sklearn.preprocessing import StandardScaler
 import json
 import matplotlib.pyplot as plt
 from inference_sdk import InferenceHTTPClient
+import mysql.connector
+import altair as alt
+
+db_connection = mysql.connector.connect(
+    host="localhost",
+    user="",
+    password="",
+    # database="LivestockDiseasesApp"
+)
+cursor = db_connection.cursor()
+
+
+def create_users_table():
+    cursor.execute("CREATE DATABASE IF NOT EXISTS LivestockDiseasesApp")
+    cursor.execute("USE LivestockDiseasesApp")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS users (
+                            user_id INT AUTO_INCREMENT PRIMARY KEY,
+                            user_name VARCHAR(255),
+                            user_email VARCHAR(255),
+                            user_password VARCHAR(255)
+                        )""")
+
+    db_connection.commit()
+
+
+def create_diseases_table():
+    cursor.execute("""CREATE TABLE IF NOT EXISTS diseases (
+                        disease_id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT,
+                        age INT,
+                        gender VARCHAR(10),
+                        temperature FLOAT,
+                        weight FLOAT,
+                        vaccination_status VARCHAR(50),
+                        symptom1 VARCHAR(255),
+                        symptom2 VARCHAR(255),
+                        symptom3 VARCHAR(255),
+                        anthrax_prob FLOAT,
+                        blackleg_prob FLOAT,
+                        foot_and_mouth_prob FLOAT,
+                        lumpy_virus_prob FLOAT,
+                        pneumonia_prob FLOAT,
+                        FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    )""")
+
+    # Commit changes and close connection
+    db_connection.commit()
 
 
 def label_encode_column(data, column):
@@ -119,206 +168,368 @@ def image_model(img):
     st.write(f"Prediction : {top} with a confidence of {confidence * 100}%")
 
 
+def auth():
+    st.header("CATTLE DISEASE PREDICTOR")
+    cred_option = st.selectbox("Do you want to Sign up or Login?", ("Sign Up", "Login"))
+    placeholder = st.empty()
+
+    if cred_option == "Sign Up":
+        with placeholder.form("signup"):
+            st.markdown("#### Enter the Credentials you want to use")
+            username = st.text_input("Username")
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            password_confirm = st.text_input("Confirm Password", type="password")
+            submit = st.form_submit_button("Sign Up")
+            if submit:
+                if username and email and password and password_confirm:
+                    if "@" in email:
+                        if password == password_confirm:
+                            insert_query = "INSERT INTO users (user_name, user_email, user_password) VALUES (%s, %s, %s)"
+                            user_data = (username, email, password)
+                            cursor.execute(insert_query, user_data)
+                            db_connection.commit()
+                            st.success("User signed up successfully!")
+                            time.sleep(2)
+                            placeholder.empty()
+
+                            select_query = "SELECT * FROM users WHERE user_email = %s"
+                            cursor.execute(select_query, (email,))
+                            user = cursor.fetchone()
+                            st.session_state.signed_in = True
+                            st.session_state.user_id = user[0]
+                            st.session_state.username = user[1]
+                            st.rerun()
+                        else:
+                            st.warning("The Password and Confirm Password Fields do Not Match")
+                    else:
+                        st.warning("Please Enter a valid Email Address")
+                else:
+                    st.warning("Please fill in all the necessary form fields")
+
+    elif cred_option == "Login":
+        with placeholder.form("login"):
+            st.markdown("#### Enter your credentials")
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login")
+
+            if submit:
+                try:
+                    select_query = "SELECT * FROM users WHERE user_email = %s"
+                    cursor.execute(select_query, (email,))
+                    user = cursor.fetchone()
+                    if user and user[3] == password:
+                        st.success(f"You are Successfully logged in as {user[1]}")
+                        time.sleep(2)
+                        placeholder.empty()
+                        st.session_state.signed_in = True
+                        st.session_state.user_id = user[0]
+                        st.session_state.username = user[1]
+                        st.rerun()
+                    else:
+                        st.warning("User Authentication Failed")
+                except Exception as e:
+                    st.warning(f"Error : {e}")
+
+
+def display_table_data_users(connection, table_name, column_names):
+    if connection:
+        try:
+            cursor.execute(f"SELECT * FROM {table_name}")
+            data = cursor.fetchall()
+            if data:
+                column_mapping = {old_name: new_name for old_name, new_name in zip(cursor.column_names, column_names)}
+                renamed_data = [
+                    {column_mapping.get(old_name, old_name): value for old_name, value in zip(cursor.column_names, row)}
+                    for row in data]
+
+                # Remove the index column (first column)
+                renamed_data_no_index = [{k: v for k, v in row.items() if k != column_names[0]} for row in renamed_data]
+
+                st.table(renamed_data_no_index)
+            else:
+                st.info("No data available in the table.")
+        except Exception as e:
+            st.error(f"Error fetching data from the table: {e}")
+
+
+def display_table_data_diseases(connection, table_name, column_names):
+    if connection:
+        try:
+            cursor.execute(f"SELECT * FROM {table_name}")
+            data = cursor.fetchall()
+            if data:
+                column_mapping = {old_name: new_name for old_name, new_name in zip(cursor.column_names, column_names)}
+                renamed_data = [
+                    {column_mapping.get(old_name, old_name): value for old_name, value in zip(cursor.column_names, row)}
+                    for row in data]
+
+                # Remove the index column (first column)
+                renamed_data_no_index = [{k: v for k, v in row.items() if k != column_names[0]} for row in renamed_data]
+
+                st.table(renamed_data_no_index)
+            else:
+                st.info("No data available in the table.")
+        except Exception as e:
+            st.error(f"Error fetching data from the table: {e}")
+
+
 def main():
     st.set_page_config(
         page_title="Livestock Disease Predictor",
         page_icon=":cow2:",
-        layout="centered",
+        layout="wide",
         initial_sidebar_state="expanded"
     )
+    if "signed_in" not in st.session_state:
+        st.session_state.signed_in = False
+        st.session_state.user_id = ""
+        st.session_state.username = ""
 
-    animation_col, header_col = st.columns([1, 3])
+    create_users_table()
+    create_diseases_table()
 
-    with header_col:
-        st.markdown("<div style='padding-top: 50px;'></div>", unsafe_allow_html=True)
-        st.header("CATTLE DISEASE PREDICTOR")
+    if not st.session_state.signed_in:
+        auth()
 
-    with animation_col:
-        display_animation()
+    if "signed_in" in st.session_state:
+        try:
+            if st.session_state.signed_in is True:
+                if st.session_state.username == "Admin":
+                    st.subheader("Admin Panel")
+                    admin_choice = st.selectbox("What do you want to View", ("Users", "Diagnosis"))
+                    if admin_choice == "Users":
+                        column_names = ["User_id", "Username", "User_email", "Password"]
+                        display_table_data_users(db_connection, "users", column_names)
+                    elif admin_choice == "Diagnosis":
+                        column_names = ["Disease_id", "User_id", "Age", "Gender", "Temperature", "Weight",
+                                        "Vaccination", "Symptom 1", "Symptom 2", "Symptom 3", "Anthrax Prob.",
+                                        "Blackleg Prob.", "Foot and Mouth Prob.", "Lumpy Virus Prob"]
+                        display_table_data_diseases(db_connection, "diseases", column_names)
+                else:
+                    animation_col, header_col = st.columns([1, 3])
 
-    with open('cattle_diseases_svc.pkl', 'rb') as model_file:
-        loaded_model = pickle.load(model_file)
-    with open('livestock_scaler.pkl', 'rb') as model_file:
-        loaded_scaler = pickle.load(model_file)
+                    with header_col:
+                        st.markdown("<div style='padding-top: 50px;'></div>", unsafe_allow_html=True)
+                        st.header("CATTLE DISEASE PREDICTOR")
 
-    age = st.slider('What is the Age of the Animal in Years?', 1, 15)
+                    with animation_col:
+                        display_animation()
 
-    gender = st.selectbox("What is the Gender of the Animal?", ["Male", "Female"])
-    temp = st.text_input("What is the Temperature of the Animal in Degrees Celsius?")
+                    with open('cattle_diseases_svc.pkl', 'rb') as model_file:
+                        loaded_model = pickle.load(model_file)
+                    with open('livestock_scaler.pkl', 'rb') as model_file:
+                        loaded_scaler = pickle.load(model_file)
 
-    if temp:
-        temp = float(temp)
-        temp = (temp * 9 / 5) + 32
+                    age = st.slider('What is the Age of the Animal in Years?', 1, 15)
 
-        if temp < 95:
-            st.warning("The entered Temperature is too Low")
-        elif temp > 110:
-            st.warning("The entered Temperature is too High")
+                    gender = st.selectbox("What is the Gender of the Animal?", ["Male", "Female"])
+                    temperature = st.text_input("What is the Temperature of the Animal in Degrees Celsius?")
 
-    weight = st.slider("What is the Weight of the Animal in KG?", 0, 500)
-    vaccination_history = st.selectbox("Has the Animal been previously Vaccinated?", ["Yes", "No"])
+                    if temperature:
+                        temp = float(temperature)
+                        temp = (temp * 9 / 5) + 32
 
-    symptom_1 = [
-        "depression",
-        "painless lumps",
-        "loss of appetite",
-        "difficulty walking",
-        "lameness",
-        "chills",
-        "crackling sound",
-        "sores on gums",
-        "fatigue",
-        "shortness of breath",
-        "chest discomfort",
-        "swelling in limb",
-        "swelling in abdomen",
-        "blisters on gums",
-        "swelling in extremities",
-        "swelling in muscle",
-        "blisters on hooves",
-        "blisters on tongue",
-        "sores on tongue",
-        "sweats",
-        "sores on hooves",
-        "blisters on mouth",
-        "swelling in neck",
-        "sores on mouth"
-    ]
+                        if temp < 95:
+                            st.warning("The entered Temperature is too Low")
+                        elif temp > 110:
+                            st.warning("The entered Temperature is too High")
 
-    symptom_2 = [
-        "painless lumps",
-        "loss of appetite",
-        "swelling in limb",
-        "blisters on gums",
-        "depression",
-        "blisters on tongue",
-        "blisters on mouth",
-        "swelling in extremities",
-        "sores on mouth",
-        "lameness",
-        "sores on tongue",
-        "difficulty walking",
-        "sweats",
-        "sores on hooves",
-        "shortness of breath",
-        "crackling sound",
-        "chest discomfort",
-        "chills",
-        "swelling in abdomen",
-        "sores on gums",
-        "swelling in muscle",
-        "fatigue",
-        "swelling in neck",
-        "blisters on hooves"
-    ]
+                    weight = st.slider("What is the Weight of the Animal in KG?", 0, 500)
+                    vaccination_history = st.selectbox("Has the Animal been previously Vaccinated?", ["Yes", "No"])
 
-    symptom_3 = [
-        "loss of appetite",
-        "depression",
-        "crackling sound",
-        "difficulty walking",
-        "painless lumps",
-        "shortness of breath",
-        "lameness",
-        "chills",
-        "swelling in extremities",
-        "fatigue",
-        "chest discomfort",
-        "swelling in limb",
-        "sweats",
-        "blisters on mouth",
-        "sores on mouth",
-        "swelling in abdomen",
-        "blisters on tongue",
-        "swelling in muscle",
-        "swelling in neck",
-        "sores on tongue",
-        "blisters on hooves",
-        "blisters on gums",
-        "sores on hooves",
-        "sores on gums"
-    ]
+                    symptom_1 = [
+                        "depression",
+                        "painless lumps",
+                        "loss of appetite",
+                        "difficulty walking",
+                        "lameness",
+                        "chills",
+                        "crackling sound",
+                        "sores on gums",
+                        "fatigue",
+                        "shortness of breath",
+                        "chest discomfort",
+                        "swelling in limb",
+                        "swelling in abdomen",
+                        "blisters on gums",
+                        "swelling in extremities",
+                        "swelling in muscle",
+                        "blisters on hooves",
+                        "blisters on tongue",
+                        "sores on tongue",
+                        "sweats",
+                        "sores on hooves",
+                        "blisters on mouth",
+                        "swelling in neck",
+                        "sores on mouth"
+                    ]
 
-    all_symptoms = list(set(symptom_1 + symptom_2 + symptom_3))
-    symptoms = st.multiselect("Select 3 Symptoms", all_symptoms)
+                    symptom_2 = [
+                        "painless lumps",
+                        "loss of appetite",
+                        "swelling in limb",
+                        "blisters on gums",
+                        "depression",
+                        "blisters on tongue",
+                        "blisters on mouth",
+                        "swelling in extremities",
+                        "sores on mouth",
+                        "lameness",
+                        "sores on tongue",
+                        "difficulty walking",
+                        "sweats",
+                        "sores on hooves",
+                        "shortness of breath",
+                        "crackling sound",
+                        "chest discomfort",
+                        "chills",
+                        "swelling in abdomen",
+                        "sores on gums",
+                        "swelling in muscle",
+                        "fatigue",
+                        "swelling in neck",
+                        "blisters on hooves"
+                    ]
 
-    symptom1_bool = False
-    symptom2_bool = False
-    symptom3_bool = False
+                    symptom_3 = [
+                        "loss of appetite",
+                        "depression",
+                        "crackling sound",
+                        "difficulty walking",
+                        "painless lumps",
+                        "shortness of breath",
+                        "lameness",
+                        "chills",
+                        "swelling in extremities",
+                        "fatigue",
+                        "chest discomfort",
+                        "swelling in limb",
+                        "sweats",
+                        "blisters on mouth",
+                        "sores on mouth",
+                        "swelling in abdomen",
+                        "blisters on tongue",
+                        "swelling in muscle",
+                        "swelling in neck",
+                        "sores on tongue",
+                        "blisters on hooves",
+                        "blisters on gums",
+                        "sores on hooves",
+                        "sores on gums"
+                    ]
 
-    if st.button("Show Prediction"):
+                    all_symptoms = list(set(symptom_1 + symptom_2 + symptom_3))
+                    symptoms = st.multiselect("Select 3 Symptoms", all_symptoms)
 
-        if len(symptoms) > 3:
-            st.warning("You have entered More than the 3 Required Symptoms")
-        elif len(symptoms) < 1:
-            st.warning("You have Not entered any Symptoms")
-        elif len(symptoms) < 3:
-            st.warning("You need to enter 3 Symptoms")
-        else:
-            if symptoms:
-                for i in range(len(symptoms)):
-                    if symptoms[i] in symptom_1 and symptom1_bool is False:
-                        symptom1 = symptoms[i]
-                        symptom1_bool = True
-                    elif symptoms[i] in symptom_2 and symptom2_bool is False:
-                        symptom2 = symptoms[i]
-                        symptom2_bool = True
-                    elif symptoms[i] in symptom_3 and symptom3_bool is False:
-                        symptom3 = symptoms[i]
-                        symptom3_bool = True
+                    symptom1_bool = False
+                    symptom2_bool = False
+                    symptom3_bool = False
 
-            if symptom1_bool and symptom2_bool and symptom3_bool:
-                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
-                            'Symptom 2': f'{symptom2}', 'Symptom 3': f'{symptom3}'}
-            elif symptom1_bool and symptom2_bool:
-                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
-                            'Symptom 2': f'{symptom2}', 'Symptom 3': f''}
-            elif symptom1_bool:
-                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
-                            'Symptom 2': '', 'Symptom 3': ''}
+                    if st.button("Show Prediction"):
 
-            new_df = pd.DataFrame([new_data])
-            new_features = ['blisters on gums', 'blisters on hooves', 'blisters on mouth',
-                            'blisters on tongue', 'chest discomfort', 'chills', 'crackling sound',
-                            'depression', 'difficulty walking', 'fatigue', 'lameness', 'loss of appetite',
-                            'painless lumps', 'shortness of breath', 'sores on gums', 'sores on hooves',
-                            'sores on mouth', 'sores on tongue', 'sweats', 'swelling in abdomen',
-                            'swelling in extremities', 'swelling in limb', 'swelling in muscle',
-                            'swelling in neck']
+                        if len(symptoms) > 3:
+                            st.warning("You have entered More than the 3 Required Symptoms")
+                        elif len(symptoms) < 1:
+                            st.warning("You have Not entered any Symptoms")
+                        elif len(symptoms) < 3:
+                            st.warning("You need to enter 3 Symptoms")
+                        else:
+                            if symptoms:
+                                for i in range(len(symptoms)):
+                                    if symptoms[i] in symptom_1 and symptom1_bool is False:
+                                        symptom1 = symptoms[i]
+                                        symptom1_bool = True
+                                    elif symptoms[i] in symptom_2 and symptom2_bool is False:
+                                        symptom2 = symptoms[i]
+                                        symptom2_bool = True
+                                    elif symptoms[i] in symptom_3 and symptom3_bool is False:
+                                        symptom3 = symptoms[i]
+                                        symptom3_bool = True
 
-            for feature in new_features:
-                new_df[feature] = 0
+                            if symptom1_bool and symptom2_bool and symptom3_bool:
+                                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
+                                            'Symptom 2': f'{symptom2}', 'Symptom 3': f'{symptom3}'}
 
-            for index, row in new_df.iterrows():
-                for symptom_column in ['Symptom 1', 'Symptom 2', 'Symptom 3']:
-                    symptom = row[symptom_column]
-                    if symptom in new_features:
-                        new_df.loc[index, symptom] = 1
+                            elif symptom1_bool and symptom2_bool:
+                                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
+                                            'Symptom 2': f'{symptom2}', 'Symptom 3': f''}
+                            elif symptom1_bool:
+                                new_data = {'Age': f"{age}", 'Temperature': f"{temp}", 'Symptom 1': f'{symptom1}',
+                                            'Symptom 2': '', 'Symptom 3': ''}
 
-            new_df.drop(['Symptom 1', 'Symptom 2', 'Symptom 3'], axis=1, inplace=True)
+                            new_df = pd.DataFrame([new_data])
+                            new_features = ['blisters on gums', 'blisters on hooves', 'blisters on mouth',
+                                            'blisters on tongue', 'chest discomfort', 'chills', 'crackling sound',
+                                            'depression', 'difficulty walking', 'fatigue', 'lameness',
+                                            'loss of appetite',
+                                            'painless lumps', 'shortness of breath', 'sores on gums', 'sores on hooves',
+                                            'sores on mouth', 'sores on tongue', 'sweats', 'swelling in abdomen',
+                                            'swelling in extremities', 'swelling in limb', 'swelling in muscle',
+                                            'swelling in neck']
 
-            new_df = loaded_scaler.transform(new_df)
-            svc_model = loaded_model
-            prediction = svc_model.predict(new_df)
-            disease_names = {0: "Anthrax", 1: "Blackleg", 2: "Foot and Mouth", 3: "Lumpy Virus", 4: "Pneumonia"}
-            predicted_disease = disease_names[prediction[0]]
+                            for feature in new_features:
+                                new_df[feature] = 0
 
-            st.write(f"Prediction: {predicted_disease}")
-            probabilities = svc_model.predict_proba(new_df)[0] * 100
-            diseases = ["Anthrax", "Blackleg", "Foot and Mouth", "Lumpy Virus", "Pneumonia"]
+                            for index, row in new_df.iterrows():
+                                for symptom_column in ['Symptom 1', 'Symptom 2', 'Symptom 3']:
+                                    symptom = row[symptom_column]
+                                    if symptom in new_features:
+                                        new_df.loc[index, symptom] = 1
 
-            fig, ax = plt.subplots(figsize=(6, 4))
-            ax.bar(diseases, probabilities)
-            ax.set_xlabel('Disease')
-            ax.set_ylabel('Probability (%)')
-            ax.set_title('Probabilities of Different Diseases')
-            plt.xticks(rotation=45)
-            st.pyplot(fig)
+                            new_df.drop(['Symptom 1', 'Symptom 2', 'Symptom 3'], axis=1, inplace=True)
 
-    img = upload_image()
-    if img:
-        with st.spinner("Processing Image..."):
-            image_model(img)
+                            new_df = loaded_scaler.transform(new_df)
+                            svc_model = loaded_model
+                            prediction = svc_model.predict(new_df)
+                            disease_names = {0: "Anthrax", 1: "Blackleg", 2: "Foot and Mouth", 3: "Lumpy Virus",
+                                             4: "Pneumonia"}
+                            predicted_disease = disease_names[prediction[0]]
+
+                            st.write(f"Prediction: {predicted_disease}")
+                            probabilities = svc_model.predict_proba(new_df)[0] * 100
+                            diseases = ["Anthrax", "Blackleg", "Foot and Mouth", "Lumpy Virus", "Pneumonia"]
+
+                            anthrax_prob = probabilities[0]
+                            blackleg_prob = probabilities[1]
+                            foot_and_mouth_prob = probabilities[2]
+                            lumpy_virus_prob = probabilities[3]
+                            pneumonia_prob = probabilities[4]
+
+                            insert_query = """INSERT INTO diseases (user_id, age, gender, temperature, weight, 
+                                                                                       vaccination_status, symptom1, symptom2, symptom3, anthrax_prob, 
+                                                                                       blackleg_prob, foot_and_mouth_prob, lumpy_virus_prob, pneumonia_prob) 
+                                                                                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+
+                            # Execute the SQL query
+                            cursor.execute(insert_query, (
+                                st.session_state.user_id, age, gender, temperature, weight, vaccination_history,
+                                symptom1, symptom2, symptom3, anthrax_prob, blackleg_prob,
+                                foot_and_mouth_prob, lumpy_virus_prob, pneumonia_prob))
+                            db_connection.commit()
+
+                            data = pd.DataFrame({'Disease': diseases, 'Probability': probabilities})
+                            chart = alt.Chart(data).mark_bar().encode(
+                                x=alt.X('Disease', axis=alt.Axis(labelAngle=45)),  # Rotate x-axis labels
+                                y='Probability',
+                                tooltip=['Disease', 'Probability']
+                            ).properties(
+                                width=alt.Step(80)
+                            ).configure_axis(
+                                labelFontSize=12
+                            ).configure_title(
+                                fontSize=20
+                            )
+
+                            st.write(chart)
+
+                    img = upload_image()
+                    if img:
+                        with st.spinner("Processing Image..."):
+                            image_model(img)
+        except Exception as e:
+            print(e)
 
 
 if __name__ == "__main__":
