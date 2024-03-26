@@ -17,9 +17,9 @@ import altair as alt
 
 db_connection = mysql.connector.connect(
     host="localhost",
-    user="",
-    password="",
-    # database="LivestockDiseasesApp"
+    user="user1",
+    password="password1",
+    database="LivestockDiseasesApp"
 )
 cursor = db_connection.cursor()
 
@@ -244,10 +244,58 @@ def display_table_data_users(connection, table_name, column_names):
                     {column_mapping.get(old_name, old_name): value for old_name, value in zip(cursor.column_names, row)}
                     for row in data]
 
-                # Remove the index column (first column)
-                renamed_data_no_index = [{k: v for k, v in row.items() if k != column_names[0]} for row in renamed_data]
+                for row in renamed_data:
+                    with st.expander(f"{row[column_names[0]]} - {row[column_names[2]]}"):
+                        col1, col2, col3, col4 = st.columns(4)
+                        for i, (key, value) in enumerate(row.items()):
+                            if i % 4 == 0:
+                                col1.write(f"**{key}**: {value}")
+                            elif i % 4 == 1:
+                                col2.write(f"**{key}**: {value}")
+                            elif i % 4 == 2:
+                                col3.write(f"**{key}**: {value}")
+                            elif i % 4 == 3:
+                                col4.write(f"**{key}**: {value}")
 
-                st.table(renamed_data_no_index)
+                        record_choice = st.radio(f"What do you want to do with the record id {row[column_names[0]]}?",
+                                                 ["View", "Update", "Delete"], horizontal=True)
+                        if record_choice == "View":
+                            pass
+                        elif record_choice == "Update":
+                            col1_1, col1_2 = st.columns(2)
+                            with col1_1:
+                                new_username = st.text_input("Enter the New Username", value=row[column_names[1]])
+                                new_password = st.text_input("Enter the New Password", type="password")
+                            with col1_2:
+                                new_email = st.text_input("Enter the New Email Address", value=row[column_names[2]])
+                                confirm_new_pass = st.text_input("Confirm the New Password", type="password")
+                            confirm_update = st.button(f"Confirm Update Record {row[column_names[0]]}")
+                            if confirm_update:
+                                try:
+                                    if confirm_new_pass == new_password:
+                                        sql = """UPDATE users 
+                                                     SET user_name = %s, user_email = %s, user_password = %s
+                                                     WHERE user_id = %s"""
+                                        val = (new_username, new_email, new_password, row[column_names[0]])
+                                        cursor.execute(sql, val)
+                                        db_connection.commit()
+                                        st.success("Record Updated Successfully")
+                                    else:
+                                        st.warning("The two passwords you entered do not match")
+                                except Exception as e:
+                                    print(e)
+                        elif record_choice == "Delete":
+                            st.write("Are you sure you want to delete this record?")
+                            cancel_delete = st.button(f"No, Cancel Deletion of id {row[column_names[0]]}")
+                            if cancel_delete:
+                                pass
+                            confirm_delete = st.button(f"Yes, Delete Record id {row[column_names[0]]}")
+                            if confirm_delete:
+                                sql = "DELETE FROM users WHERE user_id = %s"
+                                cursor.execute(sql, (row[column_names[0]],))
+                                connection.commit()
+                                st.success("User deleted successfully.")
+
             else:
                 st.info("No data available in the table.")
         except Exception as e:
@@ -265,10 +313,47 @@ def display_table_data_diseases(connection, table_name, column_names):
                     {column_mapping.get(old_name, old_name): value for old_name, value in zip(cursor.column_names, row)}
                     for row in data]
 
-                # Remove the index column (first column)
-                renamed_data_no_index = [{k: v for k, v in row.items() if k != column_names[0]} for row in renamed_data]
+                for row in renamed_data:
+                    probabilities = [row[column_names[10]], row[column_names[11]], row[column_names[12]],
+                                     row[column_names[13]], row[column_names[14]]]
+                    highest_prob_index = probabilities.index(max(probabilities))
 
-                st.table(renamed_data_no_index)
+                    # Mapping disease names to indexes
+                    disease_mapping = {
+                        0: "anthrax",
+                        1: "blackleg",
+                        2: "foot and mouth",
+                        3: "lumpy virus",
+                        4: "pneumonia"
+                    }
+
+                    highest_prob_disease = disease_mapping[highest_prob_index]
+                    with st.expander(
+                            f"{max(probabilities)} % {str(highest_prob_disease)[0].upper() + str(highest_prob_disease)[1:]}"):
+                        col1, col2, col3, col4 = st.columns(4)
+                        for i, (key, value) in enumerate(row.items()):
+                            if i % 4 == 0:
+                                col1.write(f"**{key}**: {value}")
+                            elif i % 4 == 1:
+                                col2.write(f"**{key}**: {value}")
+                            elif i % 4 == 2:
+                                col3.write(f"**{key}**: {value}")
+                            elif i % 4 == 3:
+                                col4.write(f"**{key}**: {value}")
+                        record_choice = st.radio(f"What do you want to do with the record id {row[column_names[0]]}?",
+                                                 ["View", "Delete"], horizontal=True)
+                        if record_choice == "Delete":
+                            st.write("Are you sure you want to delete this record?")
+                            cancel_delete = st.button(f"No, Cancel Deletion of id {row[column_names[0]]}")
+                            if cancel_delete:
+                                pass
+                            confirm_delete = st.button(f"Yes, Delete Record id {row[column_names[0]]}")
+                            if confirm_delete:
+                                sql = "DELETE FROM diseases WHERE disease_id = %s"
+                                cursor.execute(sql, (row[column_names[0]],))
+                                connection.commit()
+                                st.success("Record deleted successfully.")
+
             else:
                 st.info("No data available in the table.")
         except Exception as e:
@@ -305,7 +390,7 @@ def main():
                     elif admin_choice == "Diagnosis":
                         column_names = ["Disease_id", "User_id", "Age", "Gender", "Temperature", "Weight",
                                         "Vaccination", "Symptom 1", "Symptom 2", "Symptom 3", "Anthrax Prob.",
-                                        "Blackleg Prob.", "Foot and Mouth Prob.", "Lumpy Virus Prob"]
+                                        "Blackleg Prob.", "Foot and Mouth Prob.", "Lumpy Virus Prob", "Pneumonia Prob"]
                         display_table_data_diseases(db_connection, "diseases", column_names)
                 else:
                     animation_col, header_col = st.columns([1, 3])
@@ -491,11 +576,11 @@ def main():
                             probabilities = svc_model.predict_proba(new_df)[0] * 100
                             diseases = ["Anthrax", "Blackleg", "Foot and Mouth", "Lumpy Virus", "Pneumonia"]
 
-                            anthrax_prob = probabilities[0]
-                            blackleg_prob = probabilities[1]
-                            foot_and_mouth_prob = probabilities[2]
-                            lumpy_virus_prob = probabilities[3]
-                            pneumonia_prob = probabilities[4]
+                            anthrax_prob = round(probabilities[0], 2)
+                            blackleg_prob = round(probabilities[1], 2)
+                            foot_and_mouth_prob = round(probabilities[2], 2)
+                            lumpy_virus_prob = round(probabilities[3], 2)
+                            pneumonia_prob = round(probabilities[4], 2)
 
                             insert_query = """INSERT INTO diseases (user_id, age, gender, temperature, weight, 
                                                                                        vaccination_status, symptom1, symptom2, symptom3, anthrax_prob, 
@@ -505,8 +590,8 @@ def main():
                             # Execute the SQL query
                             cursor.execute(insert_query, (
                                 st.session_state.user_id, age, gender, temperature, weight, vaccination_history,
-                                symptom1, symptom2, symptom3, anthrax_prob, blackleg_prob,
-                                foot_and_mouth_prob, lumpy_virus_prob, pneumonia_prob))
+                                symptom1, symptom2, symptom3, int(anthrax_prob), int(blackleg_prob),
+                                int(foot_and_mouth_prob), int(lumpy_virus_prob), int(pneumonia_prob)))
                             db_connection.commit()
 
                             data = pd.DataFrame({'Disease': diseases, 'Probability': probabilities})
