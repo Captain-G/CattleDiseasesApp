@@ -17,9 +17,9 @@ import altair as alt
 
 db_connection = mysql.connector.connect(
     host="localhost",
-    user="user1",
-    password="password1",
-    database="LivestockDiseasesApp"
+    user="",
+    password="",
+    database=""
 )
 cursor = db_connection.cursor()
 
